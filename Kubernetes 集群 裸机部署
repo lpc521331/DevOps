@@ -15,3 +15,43 @@ sudo systemctl enable --now chronyd
 
 # 检查时间同步状态
 timedatectl status
+
+步骤 4：设置主机名 (Hostname)
+# 查看当前主机名
+hostnamectl
+
+# 设置新的主机名（例如：liupcMaster）
+sudo hostnamectl set-hostname liupcMaster
+
+5.配置k8s源
+查看 sudo yum list | grep kubernetes
+删除 sudo yum clean all
+下载 sudo yum makecache
+
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el7-x86_64/
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://mirrors.aliyun.com/kubernetes/yum/doc/yum-key.gpg https://mirrors.aliyun.com/kubernetes/yum/doc/rpm-package-key.gpg
+exclude=kubelet kubeadm kubectl
+EOF
+
+
+步骤 6：安装并配置 Docker
+Kubernetes 使用容器运行时接口 (CRI) 与 Docker 交互。
+
+# 1. 卸载旧版本 Docker（如果存在）
+sudo yum remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine
+
+# 2. 安装依赖包并配置 Docker 阿里云镜像源
+sudo yum install -y yum-utils
+sudo yum-config-manager --add-repo https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
+
+# 3. 安装 Docker
+sudo yum install -y docker-ce docker-ce-cli containerd.io
+
+# 5. 启动并设置 Docker 开机自启
+sudo systemctl enable --now docker
