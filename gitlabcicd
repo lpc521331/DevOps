@@ -1,0 +1,113 @@
+1. 安装 Docker 并配置国内镜像源
+sudo yum install docker -y
+sudo systemctl start docker && sudo systemctl enable docker
+sudo usermod -aG docker root  # 赋予 root 用户 Docker 权限
+newgrp docker  # 立即生效权限
+
+云服务器使用官方Docker镜像 安装gitlab runner
+"echo \"=== 使用官方Docker镜像 ===\" && sudo docker pull gitlab/gitlab-runner:latest && echo -e \"\\n=== 验证镜像拉取成功 ===\" && sudo docker images | grep gitlab && echo -e \"\\n=== 启动GitLab Runner容器 ===\" && sudo docker run -d --name gitlab-runner --restart always -v /srv/gitlab-runner/config:/etc/gitlab-runner -v /var/run/docker.sock:/var/run/docker.sock gitlab/gitlab-runner:latest",
+
+
+# 配置多镜像源（含腾讯云等，提高成功率）
+sudo mkdir -p /etc/docker
+sudo tee /etc/docker/daemon.json <<-'EOF'
+{
+  "registry-mirrors": [
+    "https://mirror.ccs.tencentyun.com",
+    "https://docker.mirrors.ustc.edu.cn",
+    "https://hub-mirror.c.163.com",
+    "https://reg-mirror.qiniu.com",
+    "https://fdh28yt2.mirror.aliyuncs.com"
+  ]
+}
+EOF
+
+# 重启 Docker 使配置生效
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+
+# 验证镜像源是否生效
+docker info | grep "Registry Mirrors" -A 5
+
+
+2. 创建项目目录（存放 JAR 包）
+# 创建目录并授权（确保 Docker 容器可读写）
+sudo mkdir -p /opt/springboot-app
+sudo chmod 777 /opt/springboot-app
+
+
+二、部署 GitLab Runner（Docker 执行器）
+
+# 停止并删除旧容器（若存在）
+sudo docker stop gitlab-runner 2>/dev/null && sudo docker rm gitlab-runner 2>/dev/null
+
+# 启动新容器，挂载配置目录、Docker 引擎和项目目录
+sudo docker run -d --name gitlab-runner --restart always \
+  -v /srv/gitlab-runner/config:/etc/gitlab-runner \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /opt/springboot-app:/opt/springboot-app \
+  gitlab/gitlab-runner:latest
+
+2. 注册 Runner 到 GitLab 项目
+# 进入 Runner 容器
+sudo docker exec -it gitlab-runner bash
+
+# 执行注册命令
+gitlab-runner register
+
+# 按提示输入以下信息：
+# 1. GitLab 实例 URL：输入你的 GitLab 地址（如 https://jihugitlab.com）
+# 2. 注册令牌：在 GitLab 项目 → Settings → CI/CD → Runners 中获取
+# 3. Runner 名称：自定义（如 springboot-runner）
+# 4. 标签：输入 springboot,java（与后续流水线配置匹配）
+# 5. 执行器：输入 docker
+# 6. 默认 Docker 镜像：输入 openjdk:17-jdk-slim（先用基础 JDK 镜像避开 Maven 问题）
+
+注册项目级别的runner
+(踩坑)
+gitlab项目: Settings → CI/CD → Runners → Project Runners
+GR1348941dtjoz4TrLhcREvQqzU-C
+GitLab 从 15.6 版本开始，逐步用 “认证令牌（Authentication token）” 替代旧的 “注册令牌”，获取方式略有变化：
+登录你的 GitLab 项目 → 进入「Settings」→「CI/CD」→ 展开「Runners」配置。
+在「Project runners」区域，点击 “New project runner”
+创建成功后，会显示一个 “Registration token”
+glrt-kwVBWSs9y_L-L6l6kxMih286MQpwOjY3YXIKdDozCnU6NDhxbxU.01.1f0c4a5sk
+
+
+
+三、解决 Maven 镜像拉取问题（备用方案）
+如果仍无法拉取 Maven 镜像，改用 服务器本地安装 Maven（无需 Docker 镜像），步骤：
+
+# 修改 Runner 执行器为 shell（无需 Docker）
+sudo vim /srv/gitlab-runner/config/config.toml
+# 将 executor = "docker" 改为 executor = "shell"，保存后重启 Runner
+sudo docker restart gitlab-runner
+
+.gitlab-ci.yml
+variables:
+  PROJECT_NAME: "your-project"
+  JAR_NAME: "${PROJECT_NAME}.jar"
+  SERVER_DIR: "/opt/springboot-app"
+
+stages:
+  - build
+  - deploy
+
+build:
+  stage: build
+  tags: [springboot, java]
+  image: maven:3.9.6-openjdk-17
+  script:
+    - mvn clean package -DskipTests
+    - cp target/${JAR_NAME} ${SERVER_DIR}/
+
+deploy:
+  stage: deploy
+  tags: [springboot, java]
+  image: openjdk:17-jdk-slim
+  script:
+    - ps -ef | grep ${JAR_NAME} | grep -v grep | awk '{print $2}' | xargs -r kill -9
+    - cd ${SERVER_DIR} && nohup java -jar ${JAR_NAME} > app.log 2>&1 &
+  only:
+    - main
+
