@@ -55,3 +55,40 @@ sudo yum install -y docker-ce docker-ce-cli containerd.io
 
 # 5. 启动并设置 Docker 开机自启
 sudo systemctl enable --now docker
+
+
+ 安装 K8s 组件
+sudo yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes
+
+ 启动 kubelet 并设置开机自启
+sudo systemctl enable --now kubelet
+
+ 初始化 K8s 单节点集群（允许控制平面调度 Pod，适合单服务器）
+kubeadm init --kubernetes-version=v1.28.2 --image-repository registry.aliyuncs.com/google_containers --pod-network-cidr=10.244.0.0/16 --service-cidr=10.96.0.0/12 --cri-socket unix:///var/run/containerd/containerd.sock --ignore-preflight-errors=Swap
+
+网络桥接配置：确保 /proc/sys/net/bridge/bridge-nf-call-iptables 的值为 1
+echo 1 | sudo tee /proc/sys/net/bridge/bridge-nf-call-iptables
+net.bridge.bridge-nf-call-iptables = 1
+sudo sysctl --system
+sudo yum install -y iproute-tc
+
+配置普通用户使用 kubectl 的命令：
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+
+步骤 10：安装 Pod 网络附加组件 (CNI)
+Pod 之间需要网络才能通信。这里使用 Flannel。
+# 应用 Flannel 的部署清单
+kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+
+# 等待所有 Pod 变为 Running 状态
+kubectl get pods -n kube-system -w
+
+
+# 查看节点状态，应为 Ready
+kubectl get nodes
+
+# 查看所有命名空间下的系统 Pod，应全部为 Running
+kubectl get pods -n kube-system
