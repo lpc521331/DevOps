@@ -1,0 +1,17 @@
+一：环境准备
+1.禁用服务器防火墙（查看防火墙的状态：sudo systemctl status firewalld 关闭防火墙和开机禁用：systemctl stop firewalld && sudo systemctl disable firewalld）
+
+2. 禁用 Swap（K8s 要求）
+sudo swapoff -a  # 临时关闭
+sudo sed -i '/swap/s/^/#/' /etc/fstab  # 永久关闭（注释 swap 行）
+swapon --show 查看是否已经关闭，无输出已关闭
+步骤 3：同步服务器时间
+集群节点时间同步至关重要，否则会导致证书错误等问题。
+
+bash
+# 安装并启动 chrony 时间同步服务
+sudo yum install -y chrony
+sudo systemctl enable --now chronyd
+
+# 检查时间同步状态
+timedatectl status
