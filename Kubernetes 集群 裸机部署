@@ -8,7 +8,6 @@ swapon --show 查看是否已经关闭，无输出已关闭
 步骤 3：同步服务器时间
 集群节点时间同步至关重要，否则会导致证书错误等问题。
 
-bash
 # 安装并启动 chrony 时间同步服务
 sudo yum install -y chrony
 sudo systemctl enable --now chronyd
